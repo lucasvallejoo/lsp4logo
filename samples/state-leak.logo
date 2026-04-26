@@ -1,0 +1,11 @@
+; This procedure is *supposed* to draw a triangle, but it leaks turtle state:
+; after running TRI 50 the turtle is NOT back where it started.
+; A geometry-aware diagnostic should flag it.
+TO TRI :SIDE
+  REPEAT 3 [
+    FORWARD :SIDE
+    RIGHT 100   ; should be 120 to actually close the shape
+  ]
+END
+
+TRI 50

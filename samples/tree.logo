@@ -1,0 +1,15 @@
+; Recursive fractal tree. Showcases parameters, recursion, and IF/STOP.
+TO TREE :DEPTH :SIZE
+  IF :DEPTH = 0 [STOP]
+  FORWARD :SIZE
+  LEFT 30
+  TREE :DEPTH - 1 :SIZE * 0.7
+  RIGHT 60
+  TREE :DEPTH - 1 :SIZE * 0.7
+  LEFT 30
+  BACK :SIZE
+END
+
+; Drive
+MAKE "depth 6
+TREE :depth 80

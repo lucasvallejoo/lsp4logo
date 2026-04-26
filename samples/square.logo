@@ -1,0 +1,11 @@
+; Draws a square of the requested side length.
+TO SQUARE :SIDE
+  REPEAT 4 [
+    FORWARD :SIDE
+    RIGHT 90
+  ]
+END
+
+; Drive: a 100-unit square, then come home.
+SQUARE 100
+HOME
