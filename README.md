@@ -15,15 +15,14 @@ A Language Server Protocol implementation for **LOGO**, written in Kotlin.
 | 2.1 | Hand-written lexer with trivia preservation | ✅ 18 tests |
 | 2.2 | AST + two-pass recursive-descent parser with error recovery | ✅ 30 tests |
 | 2.3 | End-to-end samples integration tests | ✅ 5 tests |
-| **2.4** | **Pivot — respond to mentor feedback (this commit)** | ✅ |
-| 3 | Resolver / SymbolTable + thread-safe DocumentStore (immutable snapshots) | ⏭ next |
-| 4 | LSP endpoints — `semanticTokens`, `definition`, `publishDiagnostics`, each independently dispatched | ⏭ |
+| 2.4 | Pivot — respond to mentor feedback (roadmap, README story) | ✅ |
+| **3** | **Resolver / SymbolTable + thread-safe DocumentStore + concurrency stress test** | ✅ 27 new tests |
+| 4 | LSP endpoints — `semanticTokens`, `definition`, `publishDiagnostics`, each independently dispatched | ⏭ next |
 | 5 | Standout feature — turtle-state **inlay hints** (concrete + symbolic abstract interpretation) | ⏭ |
 | 6 | Second feature — **completion** for built-ins, user procedures, and variables in scope | ⏭ |
-| 6.5 | Concurrency stress test — concurrent `didChange` + `semanticTokens` + `completion` + `inlayHint`, no shared mutable state | ⏭ |
 | 7 | Docs Magazine, polish, screenshots, fat-jar release | ⏭ |
 
-**Total tests so far:** 53/53 passing.
+**Total tests so far:** 80/80 passing — including 3 concurrency tests that exercise simultaneous reads/writes against the document store.
 
 ---
 
@@ -102,7 +101,52 @@ Every `Token` carries `leadingTrivia: List<Trivia>` — the whitespace and comme
 
 LSP clients send the server *every keystroke*. The user spends most of their typing time in syntactically broken states. A parser that gives up on the first error blanks out the entire file's editor support. Our parser collects errors into `Program.errors` and synchronises on `TO` / `END` / `REPEAT` / `IF` / `]` / identifier — the rest of the file still produces a usable AST.
 
-*(The concurrency model and the DocumentStore design land in phase 3; this section grows then.)*
+### Concurrent independence — the document store
+
+The mentor's question — *"what would your server do if a highlighting request and a completion request arrived at the same time?"* — is answered structurally, not promissorily.
+
+```
+LSP client ─┬─► didChange (writer)            ──┐
+            ├─► semanticTokens (reader)         │
+            ├─► completion (reader)             │  ConcurrentHashMap<URI,
+            ├─► inlayHint (reader)              │    AtomicReference<DocumentSnapshot>>
+            └─► definition (reader)           ──┘
+                          │
+                          │  every reader: snapshotOf(uri).get()  // lock-free
+                          │  every writer: ref.set(newSnapshot)   // atomic swap
+                          ▼
+                  ┌──────────────────────────────────────────┐
+                  │ DocumentSnapshot (immutable)             │
+                  │   uri, version, source                   │
+                  │   tokens (List<Token>)                   │
+                  │   resolved: ResolvedProgram              │
+                  │     procedures, globals, parameters      │
+                  │     bindings (one per name reference)    │
+                  │     diagnostics (parser + resolver)      │
+                  └──────────────────────────────────────────┘
+```
+
+Three properties hold by construction:
+
+1. **A held snapshot is never mutated.** Every field is `val`; every container is read-only. A request handler that captures the snapshot on its first line can pass it across thread boundaries with no further synchronisation.
+2. **Reads and writes do not contend.** `ConcurrentHashMap.get` and `AtomicReference.get/set` are lock-free. Two readers, or a reader plus a writer, do not block each other.
+3. **Each result is tagged with the version it computed against.** Two simultaneous readers may legally see different versions if a `didChange` interleaves between their first-line reads — that is correct under LSP semantics; the client reconciles via the version numbers.
+
+Tests `DocumentStoreConcurrencyTest` demonstrate (1) and (2) under load: 6 reader threads and 2 writer threads cycling 500 iterations each, with structural assertions that every observed snapshot is internally consistent (source ↔ version ↔ binding ranges).
+
+### Resolver — the queryable knowledge surface
+
+The Resolver runs immediately after parsing and produces a `ResolvedProgram` that every LSP feature reads from:
+
+- `procedures` — built-ins followed by user-defined declarations (case-insensitive, user overrides built-in)
+- `globalVariables` — names introduced by `MAKE "name …`
+- `parametersByOwner` — formal parameters keyed by their owning `ProcedureDecl`
+- `bindings` — one entry per name *reference* in the source: `(referenceRange, symbol)`
+- `diagnostics` — unresolved variables and other resolver-layer findings
+
+LOGO is traditionally dynamically scoped, but for an IDE we deliberately resolve names statically: parameters are visible only inside their owning procedure body, globals are visible everywhere from their declaration onward, and parameters shadow same-name globals. This is documented as an interpretation choice — the assignment notes say *"since LOGO lacks a strictly defined semantics, you are encouraged to apply your own interpretation in cases of ambiguity"*.
+
+*(LSP endpoints — semantic tokens, definition, completion, inlay hints — land in phase 4 onward; they are thin readers over `ResolvedProgram`.)*
 
 ---
 

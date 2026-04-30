@@ -13,12 +13,18 @@ import org.eclipse.lsp4j.services.WorkspaceService
 import java.util.concurrent.CompletableFuture
 
 /**
- * Day 1 skeleton: announces minimal capabilities so a generic LSP client (e.g. LSP4IJ)
- * can complete the initialize handshake. Real features land in subsequent commits.
+ * The LSP entry point. Owns the [DocumentStore] (the single source of truth
+ * about open documents) and the two LSP4J service implementations.
+ *
+ * No mutable state lives directly on this class except the optional [client]
+ * back-reference used to push diagnostics — and that one is only written
+ * during the `connect` callback, which the launcher invokes before any
+ * request can arrive.
  */
 class LogoLanguageServer : LanguageServer, LanguageClientAware {
 
-    private val textDocuments = LogoTextDocumentService()
+    private val store = DocumentStore()
+    private val textDocuments = LogoTextDocumentService(store)
     private val workspace = LogoWorkspaceService()
     private var client: LanguageClient? = null
 
