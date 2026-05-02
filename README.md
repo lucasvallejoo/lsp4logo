@@ -16,13 +16,13 @@ A Language Server Protocol implementation for **LOGO**, written in Kotlin.
 | 2.2 | AST + two-pass recursive-descent parser with error recovery | ✅ 30 tests |
 | 2.3 | End-to-end samples integration tests | ✅ 5 tests |
 | 2.4 | Pivot — respond to mentor feedback (roadmap, README story) | ✅ |
-| **3** | **Resolver / SymbolTable + thread-safe DocumentStore + concurrency stress test** | ✅ 27 new tests |
-| 4 | LSP endpoints — `semanticTokens`, `definition`, `publishDiagnostics`, each independently dispatched | ⏭ next |
-| 5 | Standout feature — turtle-state **inlay hints** (concrete + symbolic abstract interpretation) | ⏭ |
+| 3 | Resolver / SymbolTable + thread-safe DocumentStore + concurrency stress test | ✅ |
+| **4** | **LSP endpoints — `semanticTokens`, `definition`, `publishDiagnostics`, each dispatched on a work-stealing executor with cancellation** | ✅ 29 new tests |
+| 5 | Standout feature — turtle-state **inlay hints** (concrete + symbolic abstract interpretation) | ⏭ next |
 | 6 | Second feature — **completion** for built-ins, user procedures, and variables in scope | ⏭ |
 | 7 | Docs Magazine, polish, screenshots, fat-jar release | ⏭ |
 
-**Total tests so far:** 80/80 passing — including 3 concurrency tests that exercise simultaneous reads/writes against the document store.
+**Total tests so far:** 109/109 passing — including 3 concurrency tests that exercise simultaneous reads/writes against the document store.
 
 ---
 
@@ -146,7 +146,27 @@ The Resolver runs immediately after parsing and produces a `ResolvedProgram` tha
 
 LOGO is traditionally dynamically scoped, but for an IDE we deliberately resolve names statically: parameters are visible only inside their owning procedure body, globals are visible everywhere from their declaration onward, and parameters shadow same-name globals. This is documented as an interpretation choice — the assignment notes say *"since LOGO lacks a strictly defined semantics, you are encouraged to apply your own interpretation in cases of ambiguity"*.
 
-*(LSP endpoints — semantic tokens, definition, completion, inlay hints — land in phase 4 onward; they are thin readers over `ResolvedProgram`.)*
+### LSP endpoints — thin readers over `ResolvedProgram`
+
+The first three endpoints land in phase 4. Each one is implemented in a single small file under `features/`, calls into the resolver-built knowledge surface, and runs on the shared work-stealing executor with cancellation support.
+
+- **`textDocument/definition`** — `Definition.locate(snapshot, position)` finds the binding at the cursor and returns the location of the corresponding declaration. Built-in commands return an empty list (they have no source). Parameters return their declaration site in the `TO` line; user procedures return their `nameRange`; globals return the `MAKE` word target.
+- **`textDocument/semanticTokens/full`** — `SemanticTokens.encode(snapshot)` walks the token stream (and the trivia for comments), classifies each token using the standard LSP `SemanticTokenTypes` legend, and emits the LSP-mandated delta-encoded `Int` quintuple stream. Highlighting is **resolver-aware**: a `:x` reference is emitted as `parameter` when it resolves to a procedure parameter, and as `variable` otherwise.
+- **`publishDiagnostics`** — pushed automatically after every `didOpen` and `didChange`. The diagnostic stream unifies parser errors and resolver warnings via the `Diagnostic.source` field (`"parser"` vs `"resolver"`) so the user sees them as one list.
+
+All three handlers follow the same pattern, which is the structural answer to the mentor's concurrency question:
+
+```kotlin
+override fun definition(params): CompletableFuture<…> =
+    CompletableFutures.computeAsync(executor) { cancel ->
+        cancel.checkCanceled()
+        val snapshot = store.snapshotOf(uri) ?: return@computeAsync …
+        cancel.checkCanceled()
+        Definition.locate(snapshot, params.position)
+    }
+```
+
+The first line captures an immutable snapshot. Everything after that is pure computation against a frozen value. Two simultaneous requests cannot interfere — there is no shared mutable state for them to fight over.
 
 ---
 
