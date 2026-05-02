@@ -2,8 +2,11 @@ package io.github.lucasvallejoo.lsp4logo.server
 
 import io.github.lucasvallejoo.lsp4logo.features.Definition
 import io.github.lucasvallejoo.lsp4logo.features.Diagnostics
+import io.github.lucasvallejoo.lsp4logo.features.InlayHints
 import io.github.lucasvallejoo.lsp4logo.features.SemanticTokens
 import org.eclipse.lsp4j.DefinitionParams
+import org.eclipse.lsp4j.InlayHint
+import org.eclipse.lsp4j.InlayHintParams
 import org.eclipse.lsp4j.DidChangeTextDocumentParams
 import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
@@ -91,6 +94,17 @@ class LogoTextDocumentService(
             val snapshot = store.snapshotOf(uri) ?: return@computeAsync LspSemanticTokens(emptyList())
             cancel.checkCanceled()
             SemanticTokens.encode(snapshot)
+        }
+    }
+
+    override fun inlayHint(params: InlayHintParams): CompletableFuture<MutableList<InlayHint>> {
+        val uri = URI.create(params.textDocument.uri)
+        val range = params.range
+        return CompletableFutures.computeAsync(executor) { cancel ->
+            cancel.checkCanceled()
+            val snapshot = store.snapshotOf(uri) ?: return@computeAsync mutableListOf()
+            cancel.checkCanceled()
+            InlayHints.compute(snapshot, range).toMutableList()
         }
     }
 

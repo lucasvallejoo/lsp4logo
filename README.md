@@ -17,12 +17,12 @@ A Language Server Protocol implementation for **LOGO**, written in Kotlin.
 | 2.3 | End-to-end samples integration tests | ✅ 5 tests |
 | 2.4 | Pivot — respond to mentor feedback (roadmap, README story) | ✅ |
 | 3 | Resolver / SymbolTable + thread-safe DocumentStore + concurrency stress test | ✅ |
-| **4** | **LSP endpoints — `semanticTokens`, `definition`, `publishDiagnostics`, each dispatched on a work-stealing executor with cancellation** | ✅ 29 new tests |
-| 5 | Standout feature — turtle-state **inlay hints** (concrete + symbolic abstract interpretation) | ⏭ next |
-| 6 | Second feature — **completion** for built-ins, user procedures, and variables in scope | ⏭ |
+| 4 | LSP endpoints — `semanticTokens`, `definition`, `publishDiagnostics`, each dispatched on a work-stealing executor with cancellation | ✅ |
+| **5** | **Standout feature — turtle-state inlay hints with abstract interpretation (concrete + symbolic)** | ✅ 49 new tests |
+| 6 | Second feature — **completion** for built-ins, user procedures, and variables in scope | ⏭ next |
 | 7 | Docs Magazine, polish, screenshots, fat-jar release | ⏭ |
 
-**Total tests so far:** 109/109 passing — including 3 concurrency tests that exercise simultaneous reads/writes against the document store.
+**Total tests so far:** 158/158 passing — including 3 concurrency tests, 22 symbolic-arithmetic tests, and 18 abstract-interpreter tests covering concrete movement, symbolic parameters, REPEAT closure detection (e.g. `REPEAT 4 [FD :SIDE RT 90]` provably returns home), IF/STOP guards, and floating-point fuzz suppression.
 
 ---
 
@@ -167,6 +167,34 @@ override fun definition(params): CompletableFuture<…> =
 ```
 
 The first line captures an immutable snapshot. Everything after that is pure computation against a frozen value. Two simultaneous requests cannot interfere — there is no shared mutable state for them to fight over.
+
+### Standout feature — turtle-state inlay hints
+
+The headline feature. The mentor's email named "inlay hints" as one of the LSP requests they wanted to see; this is our answer, polished into a single coherent piece of pedagogical tooling.
+
+After every statement in the source, the editor shows a ghosted hint summarising the turtle's state:
+
+```
+TO SQUARE :SIDE
+  REPEAT 4 [
+    FORWARD :SIDE                    ⟶ x=0  y=:SIDE  h=0°
+    RIGHT 90                         ⟶ x=0  y=:SIDE  h=90°
+  ]                                  ⟶ home
+END
+
+SQUARE 50                            ⟶ home
+HOME                                 ⟶ home
+```
+
+The interesting bits:
+
+- **Symbolic interpretation inside procedures.** Parameters are first-class symbolic values, so `FORWARD :SIDE` produces `y = :SIDE` rather than refusing to compute. The arithmetic is *affine* — `constant + Σ coeff·param` — which captures the overwhelming majority of LOGO patterns (`:SIZE * 0.7`, `:DEPTH - 1`, `:SIDE + 30`) while degrading gracefully to `?` for nonlinear cases (`:A * :B`, `sin(:angle)`).
+- **REPEAT closure detection.** Concrete-count `REPEAT n [body]` is unrolled literally (cap `n ≤ 100`). When the unrolled iterations bring the turtle back to `(0, 0, 0°)` the formatter prints `home` — and that is **exactly the property that distinguishes a square from a state-leaking 100°-turn-triangle**. No special-case math; the structure of the abstract interpretation tells the truth.
+- **IF + STOP guards are recognised.** `IF :depth = 0 [STOP]` keeps the post-IF state equal to the pre-IF state, modelling the canonical recursive-base-case pattern. IFs without an unconditional exit conservatively become Unknown.
+- **Top-level `MAKE "name <concrete>` seeds known globals**, so a later `:name` reference resolves to a number rather than `?`.
+- **Floating-point fuzz is snapped at the trig boundary.** `cos(90°)` returns `≈ 6e-17` on the JVM; without snapping, that fuzz propagates as a ghost `2e-16 · :SIDE` coefficient and breaks the closure-detection test. Snapping at the source keeps the rest of the math honest — and gave us a real test (`SymbolicValueTest::tiny floating-point fuzz snaps to zero`) that documents the choice.
+
+Everything above lives in `analysis/turtle/{SymbolicValue, TurtleState, AbstractInterpreter}.kt` and is fully testable without an LSP client. The `features/InlayHints.kt` adapter is twenty lines: walk the trace, format each entry, place a hint at the statement's end position. That clean separation between *understanding* and *presentation* is the architectural pattern that makes Change Signature plausible later.
 
 ---
 

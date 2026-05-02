@@ -55,6 +55,8 @@ class LogoLanguageServer(
                 SemanticTokensServerFull(/* delta = */ false),
                 /* range = */ false,
             )
+            // Turtle-state inlay hints
+            inlayHintProvider = Either.forLeft(true)
         }
         val info = ServerInfo("lsp4logo", "0.1.0")
         return CompletableFuture.completedFuture(InitializeResult(capabilities, info))
