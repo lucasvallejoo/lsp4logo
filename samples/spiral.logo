@@ -1,0 +1,16 @@
+; A growing spiral — every iteration is a slightly longer line plus a fixed
+; turn. Demonstrates:
+;   - linear arithmetic on parameters (:LEN + 5 stays affine)
+;   - that the abstract interpreter degrades gracefully: after the loop the
+;     turtle has rotated and translated by amounts that depend on a
+;     parameter, so the post-REPEAT hint is conservatively '?'.
+
+TO SPIRAL :LEN :TURN :STEPS
+  REPEAT :STEPS [
+    FORWARD :LEN
+    RIGHT :TURN
+    MAKE "LEN :LEN + 5
+  ]
+END
+
+SPIRAL 10 30 12

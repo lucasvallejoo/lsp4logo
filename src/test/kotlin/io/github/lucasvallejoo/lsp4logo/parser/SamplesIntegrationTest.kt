@@ -24,6 +24,14 @@ class SamplesIntegrationTest {
     private val samplesDir: Path =
         Paths.get(System.getProperty("user.dir"), "samples").toAbsolutePath()
 
+    /**
+     * Files in this set are *intentionally broken* — they exist to demonstrate
+     * the server's diagnostics, not to verify correct parsing. The
+     * "every-sample-parses" test below skips them; a dedicated test asserts
+     * they continue to fail in the *expected* ways.
+     */
+    private val deliberatelyBroken: Set<String> = setOf("diagnostics-demo.logo")
+
     private fun readSample(name: String): String =
         Files.readString(samplesDir.resolve(name))
 
@@ -74,7 +82,10 @@ class SamplesIntegrationTest {
 
     @Test fun `every shipped sample parses without errors`() {
         val logoFiles = Files.list(samplesDir).use { stream ->
-            stream.filter { it.toString().endsWith(".logo") }.sorted().toList()
+            stream
+                .filter { it.toString().endsWith(".logo") }
+                .filter { it.fileName.toString() !in deliberatelyBroken }
+                .sorted().toList()
         }
         val failures = logoFiles.mapNotNull { f ->
             val program = Parser.parse(Files.readString(f))
@@ -86,5 +97,28 @@ class SamplesIntegrationTest {
                 "  $n: ${errs.joinToString { it.message }}"
             },
         )
+    }
+
+    @Test fun `polygon_logo and spiral_logo parse cleanly`() {
+        // Pinned regression test for the two parametric showcases — they
+        // exercise REPEAT with a parametric count and arithmetic in REPEAT
+        // (360 / :N), patterns we want to keep working.
+        for (name in listOf("polygon.logo", "spiral.logo")) {
+            val program = Parser.parse(Files.readString(samplesDir.resolve(name)))
+            assertTrue(
+                program.errors.isEmpty(),
+                "$name produced unexpected parse errors: ${program.errors}",
+            )
+        }
+    }
+
+    @Test fun `diagnostics-demo_logo produces the expected diagnostic categories`() {
+        // The intentionally-broken showcase MUST keep failing — and in the
+        // expected ways. This is the regression test for diagnostics.
+        val program = Parser.parse(Files.readString(samplesDir.resolve("diagnostics-demo.logo")))
+        assertTrue(program.errors.isNotEmpty(), "expected this file to be broken")
+        val messages = program.errors.joinToString(" | ") { it.message }
+        assertTrue("']'" in messages, "expected unclosed-bracket error: $messages")
+        assertTrue("unknown procedure" in messages, "expected unknown-procedure error: $messages")
     }
 }

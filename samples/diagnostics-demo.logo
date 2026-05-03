@@ -1,0 +1,27 @@
+; This file is intentionally broken in a few small ways so a human (or a
+; mentor) can open it in an LSP-aware editor and see every diagnostic the
+; server emits, both from the parser and from the resolver.
+;
+;   - line 11: unclosed REPEAT bracket          (parser error)
+;   - line 16: unknown procedure name           (parser error)
+;   - line 20: unresolved variable :missing     (resolver warning)
+;   - line 24: missing argument to FORWARD      (parser error)
+
+TO BAD-1 :SIDE
+  REPEAT 4 [ FD :SIDE
+END
+
+TO BAD-2
+  ; SQUAREX is not declared anywhere — the parser cannot guess its arity.
+  SQUAREX 50
+END
+
+TO BAD-3
+  ; `:missing` was never introduced as a parameter or via MAKE.
+  FORWARD :missing
+END
+
+TO BAD-4
+  ; FORWARD has arity 1; the next token (END) is not a valid argument.
+  FORWARD
+END

@@ -1,0 +1,16 @@
+; A general N-gon procedure. Demonstrates:
+;   - parameters (:N and :SIDE flow through to FORWARD and RIGHT)
+;   - REPEAT closure detection — the inlay hint at the closing ']' should
+;     read 'home' for any concrete N, because N · (360/N) = 360°.
+;   - go-to-declaration: ⌘-click on POLYGON below jumps up to its TO line.
+
+TO POLYGON :N :SIDE
+  REPEAT :N [
+    FORWARD :SIDE
+    RIGHT 360 / :N
+  ]
+END
+
+; Drive — try changing 6 to 5, 8, 12 and watch the hints update.
+POLYGON 6 40
+HOME

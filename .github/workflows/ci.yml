@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build & test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle (cached)
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Compile + run the test suite
+        run: ./gradlew --no-daemon build
+
+      - name: Build the deliverable fat-jar
+        run: ./gradlew --no-daemon shadowJar
+
+      - name: Verify the LSP initialize handshake against the fat-jar
+        # End-to-end smoke: a real LSP client could complete the handshake
+        # against the artefact we just produced.
+        run: python3 scripts/demo.py | head -40
+
+      - name: Upload the fat-jar as a build artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lsp4logo-fatjar
+          path: build/libs/lsp4logo-*.jar
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload the test report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: build/reports/tests/test
+          retention-days: 30
