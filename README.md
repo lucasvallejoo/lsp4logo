@@ -18,11 +18,22 @@ A Language Server Protocol implementation for **LOGO**, written in Kotlin.
 | 2.4 | Pivot — respond to mentor feedback (roadmap, README story) | ✅ |
 | 3 | Resolver / SymbolTable + thread-safe DocumentStore + concurrency stress test | ✅ |
 | 4 | LSP endpoints — `semanticTokens`, `definition`, `publishDiagnostics`, each dispatched on a work-stealing executor with cancellation | ✅ |
-| **5** | **Standout feature — turtle-state inlay hints with abstract interpretation (concrete + symbolic)** | ✅ 49 new tests |
-| 6 | Second feature — **completion** for built-ins, user procedures, and variables in scope | ⏭ next |
-| 7 | Docs Magazine, polish, screenshots, fat-jar release | ⏭ |
+| 5 | Standout feature — turtle-state inlay hints with abstract interpretation (concrete + symbolic) | ✅ |
+| **6** | **Second feature — completion (built-ins, user procedures, variables in scope), end-to-end demo script, and a clean-shutdown contract** | ✅ 13 new tests |
+| 7 | Docs Magazine, polish, screenshots, fat-jar release | ⏭ next |
 
-**Total tests so far:** 158/158 passing — including 3 concurrency tests, 22 symbolic-arithmetic tests, and 18 abstract-interpreter tests covering concrete movement, symbolic parameters, REPEAT closure detection (e.g. `REPEAT 4 [FD :SIDE RT 90]` provably returns home), IF/STOP guards, and floating-point fuzz suppression.
+**Total tests so far:** 171/171 passing.
+
+### Try it without an editor
+
+The repository ships a `scripts/demo.py` that drives the server through one full LSP session against `samples/square.logo` and prints every response and notification:
+
+```bash
+./gradlew shadowJar
+python3 scripts/demo.py
+```
+
+The output shows the announced capabilities, the diagnostics push, the go-to-declaration target for `SQUARE 100`, the semantic-tokens int stream, and the symbolic turtle-state inlay hints — including the `home` label that the abstract interpreter emits when `REPEAT 4 [FD :SIDE RT 90]` closes the shape.
 
 ---
 
@@ -195,6 +206,16 @@ The interesting bits:
 - **Floating-point fuzz is snapped at the trig boundary.** `cos(90°)` returns `≈ 6e-17` on the JVM; without snapping, that fuzz propagates as a ghost `2e-16 · :SIDE` coefficient and breaks the closure-detection test. Snapping at the source keeps the rest of the math honest — and gave us a real test (`SymbolicValueTest::tiny floating-point fuzz snaps to zero`) that documents the choice.
 
 Everything above lives in `analysis/turtle/{SymbolicValue, TurtleState, AbstractInterpreter}.kt` and is fully testable without an LSP client. The `features/InlayHints.kt` adapter is twenty lines: walk the trace, format each entry, place a hint at the statement's end position. That clean separation between *understanding* and *presentation* is the architectural pattern that makes Change Signature plausible later.
+
+### Completion
+
+The other LSP request the mentor named. We support it with three classes of suggestions, picked by looking at the character immediately before the cursor:
+
+- After `:` — only **variables visible at this position** (parameters of the enclosing procedure plus any globals introduced by `MAKE`). The `insertText` strips the leading `:` so the trigger character is not duplicated.
+- After `"` — **nothing**. The user is naming a fresh global with `MAKE "name`; suggesting existing names would be the wrong default.
+- Anywhere else — **procedures** (built-in and user-defined) plus variables-with-leading-colon.
+
+`detail` carries the arity (`(no args)`, `(1 arg)`, `(:DEPTH :SIZE)` for parametric procedures), and `documentation` reuses the prose from the same `BuiltIns` catalog the resolver consults — one source of truth for "what built-ins exist and what they do".
 
 ---
 

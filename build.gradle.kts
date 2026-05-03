@@ -39,6 +39,10 @@ tasks.shadowJar {
     archiveClassifier.set("")
     archiveVersion.set(project.version.toString())
     mergeServiceFiles()
+    // Belt-and-braces: explicitly set Main-Class so `java -jar lsp4logo.jar`
+    // works regardless of whether the Shadow plugin picks it up from the
+    // `application` plugin in this Gradle version.
+    manifest { attributes["Main-Class"] = "io.github.lucasvallejoo.lsp4logo.MainKt" }
 }
 
 // Convenience: `./gradlew run` should pipe stdin/stdout straight through

@@ -1,9 +1,13 @@
 package io.github.lucasvallejoo.lsp4logo.server
 
+import io.github.lucasvallejoo.lsp4logo.features.Completion
 import io.github.lucasvallejoo.lsp4logo.features.Definition
 import io.github.lucasvallejoo.lsp4logo.features.Diagnostics
 import io.github.lucasvallejoo.lsp4logo.features.InlayHints
 import io.github.lucasvallejoo.lsp4logo.features.SemanticTokens
+import org.eclipse.lsp4j.CompletionItem
+import org.eclipse.lsp4j.CompletionList
+import org.eclipse.lsp4j.CompletionParams
 import org.eclipse.lsp4j.DefinitionParams
 import org.eclipse.lsp4j.InlayHint
 import org.eclipse.lsp4j.InlayHintParams
@@ -105,6 +109,20 @@ class LogoTextDocumentService(
             val snapshot = store.snapshotOf(uri) ?: return@computeAsync mutableListOf()
             cancel.checkCanceled()
             InlayHints.compute(snapshot, range).toMutableList()
+        }
+    }
+
+    override fun completion(
+        params: CompletionParams,
+    ): CompletableFuture<Either<MutableList<CompletionItem>, CompletionList>> {
+        val uri = URI.create(params.textDocument.uri)
+        val pos = params.position
+        return CompletableFutures.computeAsync(executor) { cancel ->
+            cancel.checkCanceled()
+            val snapshot = store.snapshotOf(uri)
+                ?: return@computeAsync Either.forLeft(mutableListOf<CompletionItem>())
+            cancel.checkCanceled()
+            Either.forLeft(Completion.compute(snapshot, pos).toMutableList())
         }
     }
 
